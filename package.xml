@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<package>
+  <name>rosrt_plane_tracker</name>
+  <version>1.0.0</version>
+  <description>rosrt_plane_tracker</description>
+  <maintainer email="thibault.portigliatti@gmail.com">Thibault Portigliatti</maintainer>
+  <license>TODO</license>
+  <author email="thibault.portigliatti@gmail.com">Thibault Portigliatti</author>
+    <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>apollo</build_depend>
+  <build_depend>sl</build_depend>
+  <build_depend>utilities</build_depend>
+  <build_depend>lwpr</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>rosrt</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>xenomai_ros</build_depend>
+
+  <run_depend>roscpp</run_depend>
+  <run_depend>rosrt</run_depend>
+  <run_depend>std_msgs</run_depend>
+  <run_depend>apollo</run_depend>
+  <run_depend>sl</run_depend>
+  <run_depend>utilities</run_depend>
+  <run_depend>lwpr</run_depend>
+
+  <export>
+  </export>
+</package>
