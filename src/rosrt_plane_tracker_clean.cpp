@@ -46,12 +46,20 @@ ekeleton to create the mygotocart task
 #endif
 
 
-
 #define RATE 1500
-#define TOPIC "visualization_marker"
-#define KO 1.0
-#define KP -1.0
-#define MAX_JOINTS_SPEED 0.1
+#define TOPIC "tracker/object_model"
+#define KO 4.0
+#define KP -4.0
+#define MAX_JOINTS_SPEED 0.2
+#define LBX -0.1
+#define UBX 0.8
+#define LBY 0.4
+#define UBY 1.2
+#define LBZ -0.8
+#define UBZ 0.5
+#define THRESHOLD_POSITION 3
+#define THRESHOLD_ORIENTATION 0.3
+
 /* defines */
 extern "C" void
 add_rosrt_plane_tracker( void );
@@ -142,14 +150,14 @@ static void set_to_zero(Vector &update){
 static void right_arm_controller(struct marker &myMarker,SL_quat *cart_orient, double Ko, double Kp, Vector &update_cart){
 
   Eigen::Quaterniond currentQuat(cart_orient[1].q[_Q0_],cart_orient[1].q[_Q1_],cart_orient[1].q[_Q2_],cart_orient[1].q[_Q3_]);
-  Eigen::Quaterniond targetQuat(myMarker.wq,myMarker.xq,myMarker.yq,myMarker.zq);
+  Eigen::Quaterniond targetQuat(myMarker.wqhand,myMarker.xqhand,myMarker.yqhand,myMarker.zqhand);
   targetQuat.normalize();
   Eigen::Vector3d eulerAngles;
   inverse_kinematics::quatLogError(targetQuat,currentQuat,eulerAngles);
 
-  update_cart[1] = Kp*(cart_state[1].x[1]-myMarker.x);
-  update_cart[2] = Kp*(cart_state[1].x[2]-myMarker.y);
-  update_cart[3] = Kp*(cart_state[1].x[3]-myMarker.z);
+  update_cart[1] = Kp*(cart_state[1].x[1]-myMarker.xhand);
+  update_cart[2] = Kp*(cart_state[1].x[2]-myMarker.yhand);
+  update_cart[3] = Kp*(cart_state[1].x[3]-myMarker.zhand);
 
   update_cart[4] = Ko*eulerAngles[0];
   update_cart[5] = Ko*eulerAngles[1];
@@ -163,29 +171,16 @@ static bool visualizePole(struct marker myMarker)
   return TRUE;
 }
 
-void clip_velocity( SL_DJstate *target,double max_speed)
-{
-  for (int i = 1; i < N_DOFS+1; ++i)
-  {
-    if(target[i].thd>max_speed)
-      { 
-        target[i].thd=max_speed;
-      } 
-      else if(target[i].thd<-max_speed)
-      {
-        target[i].thd=-max_speed;
-      }
-  }
-}
+
 void check_moving_area(Vector &cart,struct marker &myMarker)
 {
 double lbx,ubx,lby,uby,lbz,ubz;
-lbx =-0.1;
-ubx =0.8;
-lby =0.4;
-uby =1.0;
-lbz =-1.0;
-ubz = 1.0;
+lbx =LBX;
+ubx =UBX;
+lby =LBY;
+uby =UBY;
+lbz =LBZ;
+ubz = UBZ;
 
 myMarker.xaz=(lbx+ubx)/2;
 myMarker.yaz=(lby+uby)/2;
@@ -196,17 +191,96 @@ myMarker.wy = uby-lby;
 myMarker.wz = ubz-lbz;
 
 bool stop=false;
-if(cart_state[1].x[1]<lbx || cart_state[1].x[1]>ubx)
+if(cart_state[1].x[1]<lbx)
 {
-stop=true;
+  stop=true;
+  if(cart[1]<0)
+  {
+    cart[1]=0;
+  }
 }
-if(cart_state[1].x[2]<lby || cart_state[1].x[2]>uby)
+else if(cart_state[1].x[1]>ubx)
 {
-stop =true;
+  stop=true;
+  if(cart[1]>0)
+  {
+    cart[1]=0;
+  }
 }
-if(cart_state[1].x[3]<lbz || cart_state[1].x[3]>ubz)
+if(cart_state[1].x[2]<lby)
 {
-stop =true;
+  stop=true;
+  if(cart[2]<0)
+  {
+    cart[2]=0;
+  }
+}
+else if(cart_state[1].x[2]>uby)
+{
+  stop=true;
+  if(cart[2]>0)
+  {
+    cart[2]=0;
+  }
+}
+if(cart_state[1].x[3]<lbz)
+{
+  stop=true;
+  if(cart[3]<0)
+  {
+    cart[3]=0;
+  }
+}
+else if(cart_state[1].x[3]>ubz)
+{
+  stop=true;
+  if(cart[3]>0)
+  {
+    cart[3]=0;
+  }
+}
+if(stop)
+{
+  for (int i = 3; i < 6; ++i)
+  {
+    cart[i+1]=0;
+  }
+}
+}
+
+void check_object_position(Vector &cart,struct marker &myMarker)
+{
+double lbx,ubx,lby,uby,lbz,ubz;
+lbx =LBX;
+ubx =UBX;
+lby =LBY;
+uby =UBY;
+lbz =LBZ;
+ubz = UBZ;
+bool stop=false;
+if(myMarker.x<lbx)
+{
+  stop=true;
+}
+else if(myMarker.x>ubx)
+{
+  stop=true;
+  }
+if(myMarker.y<lby)
+{
+  stop=true;
+ }
+else if(myMarker.y>uby)
+{
+  stop=true;
+  }
+if(myMarker.z<lbz)
+{
+  stop=true;
+}
+else if(myMarker.z>ubz)
+{
+  stop=true;
 }
 if(stop)
 {
@@ -216,10 +290,11 @@ if(stop)
   }
 }
 }
-void safety_checking(Vector &cart, SL_DJstate *target,struct marker &myMarker)
+
+void safety_checking(Vector &cart,struct marker &myMarker)
 {
-  clip_velocity(target,MAX_JOINTS_SPEED);
   check_moving_area(cart, myMarker);
+  check_object_position(cart, myMarker);
 }
 /*****************************************************************************
 ******************************************************************************
@@ -249,7 +324,7 @@ void safety_checking(Vector &cart, SL_DJstate *target,struct marker &myMarker)
     int i;
     double task_time;
 
-    check_moving_area(cart, myMarker);
+    safety_checking(cart, myMarker);
     task_time = task_servo_time - start_time;
 
     for (i=1; i<=n_dofs; ++i) {
@@ -257,12 +332,12 @@ void safety_checking(Vector &cart, SL_DJstate *target,struct marker &myMarker)
     }
 
 
-    if (!inverseKinematics(target,endeff,joint_opt_state,
-     cart,cstatus,time_step)) {
+    if (!inverseKinematicsClip(target,endeff,joint_opt_state,
+     cart,cstatus,time_step,MAX_JOINTS_SPEED,MAX_JOINTS_SPEED)) {
       freeze();
     return FALSE;
   }
-  clip_velocity(target,MAX_JOINTS_SPEED);
+  //clip_velocity(target,MAX_JOINTS_SPEED);
 
   /* prepare inverse dynamics */
   int countermrj=0;
@@ -336,7 +411,7 @@ init_rosrt_plane_tracker(void)
 
  int j, i;
 
- 
+
 // cstatus is a mask for hand effector, which indicates with dof should be controlled
 // setting cstatus for controlling position and orientation of right hand
  activate_right_hand(cstatus);

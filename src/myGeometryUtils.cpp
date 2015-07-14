@@ -12,7 +12,6 @@
 #include "GeometryUtils.h"
 #include "SL_common.h"
 #include <math.h>
-
 #include "myGeometryUtils.h"
 #include "mycube.h"
 
@@ -97,6 +96,22 @@ Matrix RotationMatrix::getMatrix(){
       m_matrix[i+1][j+1]=m(i,j);
     } 
     m_translation[i+1]=v[i+1];
+  }
+}
+
+      AffineTransformation::AffineTransformation(double tx,double ty,double tz, Eigen::Matrix3d m)/*angles to go from the old frame to the new one*/
+  {
+    m_matrix = my_matrix(1,3,1,3);
+    m_translation = my_vector(1,3);
+m_translation[1]=tx;
+m_translation[2]=ty;
+m_translation[3]=tz;
+    for (int i = 0; i < 3; ++i)
+    {
+     for (int j = 0; j < 3; ++j)
+     {
+      m_matrix[i+1][j+1]=m(i,j);
+    } 
   }
 }
   AffineTransformation::AffineTransformation(Vector translation, double alpha,double beta, double gamma)/*angles to go from the old frame to the new one*/
@@ -193,6 +208,7 @@ void AffineTransformation::compose(AffineTransformation &a)
     neckz = AffineTransformation(0,0,0,0,0,joint_state[B_HN].th);
     neckzBase = AffineTransformation(joint_origin_pos[B_HR][_X_],joint_origin_pos[B_HR][_Y_],joint_origin_pos[B_HR][_Z_],M_PI/2,0,M_PI/2);
     transfon = AffineTransformation(neckzBase);
+    grasping_pose = AffineTransformation(0,-.2,+0.13,0,-M_PI/2,M_PI/2);
     transfon.compose(neckz);
     transfon.compose(neckx);
     transfon.compose(necky);
@@ -207,10 +223,7 @@ void AffineTransformation::compose(AffineTransformation &a)
     myMarker.xkin = out[1];
     myMarker.ykin = out[2];
     myMarker.zkin = out[3];
-    printf("position :\n");
-    printf("%f\n",myMarker.x );
-    printf("%f\n",myMarker.y );
-    printf("%f\n",myMarker.z );
+   double kxp=myMarker.x,kyp=myMarker.y,kzp=myMarker.z;
     out = transfon.apply(myMarker.x,myMarker.y,myMarker.z);
        myMarker.x=out[1];
    myMarker.y=out[2];
@@ -218,12 +231,14 @@ void AffineTransformation::compose(AffineTransformation &a)
     Eigen::Quaterniond targetQuat2(myMarker.wq,myMarker.xq,myMarker.yq,myMarker.zq);
     targetQuat2.normalize();
     Eigen::Matrix3d eigentransfo= targetQuat2.toRotationMatrix();
-    transfornp1 = AffineTransformation(out, eigentransfo);
+    movenp1 = AffineTransformation(kxp,kyp,kzp,0,0,0);
+    transfornp1 = AffineTransformation(0,0,0, eigentransfo);
 
     matToQuat(transfon.getMatrix(),myMarker.xqkin,myMarker.yqkin,myMarker.zqkin,myMarker.wqkin);
 
+    transfon.compose(movenp1);
     transfon.compose(transfornp1);
-    Vector yp = transfon.apply(0,1,0);
+    /*Vector yp = transfon.apply(0,1,0);
     Vector zp = transfon.apply(0,0,1);
     Vector planeOrigin = transfon.apply(0,0,0);
     zp[1] -= planeOrigin[1];
@@ -247,11 +262,43 @@ void AffineTransformation::compose(AffineTransformation &a)
        Rx=AffineTransformation(0,0,0,0,M_PI,0);
        transfon.compose(Rx);
      }
-   }
-   transfon.compose(patch);
-  
+   }*/
+    
    matToQuat(transfon.getMatrix(),myMarker.xq,myMarker.yq,myMarker.zq,myMarker.wq);
 
+
+
+
+/*    Vector yp = transfon.apply(0,1,0);
+    Vector zp = transfon.apply(0,0,1);
+    Vector planeOrigin = transfon.apply(0,0,0);
+    zp[1] -= planeOrigin[1];
+    zp[2] -= planeOrigin[2];
+    zp[3] -= planeOrigin[3];
+
+    yp[1] -= planeOrigin[1];
+    yp[2] -= planeOrigin[2];
+    yp[3] -= planeOrigin[3];
+    double dpz = zp[1]*zk[1]+zp[2]*zk[2]+zp[3]*zk[3];
+    double dpy = yp[2]*zk[2];*/
+
+
+
+
+
+
+
+
+
+
+   transfon.compose(grasping_pose);
+   out = transfon.apply(0,0,0);
+   myMarker.xhand=out[1];
+   myMarker.yhand=out[2];
+   myMarker.zhand=out[3];
+
+  matToQuat(transfon.getMatrix(),myMarker.xqhand,myMarker.yqhand,myMarker.zqhand,myMarker.wqhand);
+  
   }  
 
 

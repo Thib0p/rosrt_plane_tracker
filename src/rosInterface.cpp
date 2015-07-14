@@ -1,14 +1,16 @@
 #include "rosInterface.h"
-
+#ifdef __XENO__
+#include <native/task.h>
+#include <sys/mman.h>
+#endif
 
   rosInterface::rosInterface(char *topic)
   {
  
   // put in the beginning of the task ?
-  #ifdef __XENO__
+        #ifdef __XENO__
     mlockall(MCL_CURRENT | MCL_FUTURE);
   #endif
-    
     int argc = 1;
     char name[] = "SL";
     char* argv[1];

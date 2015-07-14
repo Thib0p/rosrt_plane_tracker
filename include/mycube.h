@@ -1,11 +1,14 @@
 #ifndef MY_CUBE
 #define MY_CUBE
 struct marker{
-//Plane
+//Object
 double x,y,z;
 double xq,yq,zq,wq;
 int id;
 
+//Hand
+double xhand,yhand,zhand;
+double xqhand,yqhand,zqhand,wqhand;
 //kinect
 double xkin,ykin,zkin;
 double xqkin,yqkin,zqkin,wqkin;
