@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(rosrt_plane_tracker)
-
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall")
 # this command is required for autocomplete in vim
 SET(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-
 # this sets all the required paths 
 include("${CMAKE_SOURCE_DIR}/cmake/cmake_global/LAB.cmake")
 ## find SL dependencies using catkin
@@ -28,7 +27,7 @@ endif()
 
 include_directories(${catkin_INCLUDE_DIRS})
 
-add_library(rosrt_plane_tracker src/rosrt_plane_tracker_clean.cpp src/GeometryUtils.cpp src/rosInterface.cpp src/myGeometryUtils.cpp)
+add_library(rosrt_plane_tracker src/rosrt_plane_tracker_clean.cpp src/GeometryUtils.cpp src/rosInterface.cpp src/myGeometryUtils.cpp src/graspingPose.cpp)
 target_link_libraries(rosrt_plane_tracker ${catkin_LIBRARIES} rosrt apollo_task apollo utility ${LAB_STD_LIBS} )
 install(TARGETS rosrt_plane_tracker
   ARCHIVE DESTINATION ${LAB_LIBDIR}

@@ -1,3 +1,5 @@
+#ifndef MY_GEOMETRY_UTILS_H_
+#define MY_GEOMETRY_UTILS_H_
 #include "SL.h"
 #include "SL_user.h"
 #include "SL_tasks.h"
@@ -13,7 +15,8 @@
 #include "SL_common.h"
 #include <math.h>
 
-static void matToQuat(Matrix cMo, double &x, double &y, double &z, double &w);
+
+void matToQuat(Matrix cMo, double &x, double &y, double &z, double &w);
 
 
 class RotationMatrix{
@@ -35,9 +38,12 @@ public:
   AffineTransformation(double tx, double ty, double tz, double alpha,double beta, double gamma);/*angles to go from the old frame to the new one*/
   AffineTransformation(double tx,double ty,double tz, Eigen::Matrix3d m);/*angles to go from the old frame to the new one*/
   AffineTransformation(AffineTransformation &a);/*angles to go from the old frame to the new one*/
+  void  setTranslation(Vector &input);
+  void setRotation(Matrix &input);
   Vector apply(Vector X);
   Vector apply(double a1,double a2,double a3);
   void compose(AffineTransformation &a);
+  void composeTo(AffineTransformation &a,AffineTransformation &output);
 private:
   Vector m_translation;
   Matrix m_matrix;
@@ -46,6 +52,7 @@ private:
 class cameraToRobot{
 public:
   cameraToRobot();
+   AffineTransformation& getTransfo();
   void update(struct marker &myMarker);
 private:
   AffineTransformation camera;
@@ -64,3 +71,4 @@ private:
   AffineTransformation patch;
   Vector out;
 };
+#endif

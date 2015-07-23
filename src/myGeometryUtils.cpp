@@ -14,6 +14,7 @@
 #include <math.h>
 #include "myGeometryUtils.h"
 #include "mycube.h"
+#include "graspingPose.h"
 
   RotationMatrix::RotationMatrix()
   {
@@ -182,6 +183,24 @@ Vector AffineTransformation::apply(double a1,double a2,double a3)
   out[3] += m_translation[3];
   return out;
 }
+
+ void AffineTransformation::setRotation(Matrix &input)
+ {
+  for (int i = 1; i <= 3; ++i)
+  {
+    for (int j = 1; j <= 3; ++j)
+    {
+      m_matrix[i][j]=input[i][j];
+    }
+  }
+ }
+void  AffineTransformation::setTranslation(Vector &input)
+ {
+  for (int i = 1; i <= 3; ++i)
+  {
+      m_translation[i]=input[i];
+  }
+ }
 void AffineTransformation::compose(AffineTransformation &a)
 {
   Vector translationTemp=my_vector(1,3);
@@ -191,7 +210,21 @@ void AffineTransformation::compose(AffineTransformation &a)
   m_translation[3] +=  translationTemp[3];
   mat_mult(m_matrix,a.getMatrix(),m_matrix);
 }
+void AffineTransformation::composeTo(AffineTransformation &a,AffineTransformation &output)
+{
+  Matrix tempMatrix=my_matrix(1,3,1,3);
+  Vector tempVector =my_vector(1,3);
 
+  Vector translationTemp=my_vector(1,3);
+  mat_vec_mult(m_matrix,a.getTranslation(),translationTemp);
+  tempVector[1] = m_translation[1] + translationTemp[1];
+  tempVector[2] = m_translation[2] + translationTemp[2];
+  tempVector[3] = m_translation[3] + translationTemp[3];
+  mat_mult(m_matrix,a.getMatrix(),tempMatrix);
+  output.setRotation(tempMatrix);
+  output.setTranslation(tempVector);
+
+}
 
  cameraToRobot::cameraToRobot()
  {
@@ -202,7 +235,6 @@ void AffineTransformation::compose(AffineTransformation &a)
 }
   void cameraToRobot::update(struct marker &myMarker)
   {
-    
     necky = AffineTransformation(0,0,0,0,-joint_state[B_HR].th,0);
     neckx = AffineTransformation(0,0,0,-joint_state[B_HT].th,0,0);
     neckz = AffineTransformation(0,0,0,0,0,joint_state[B_HN].th);
@@ -291,16 +323,19 @@ void AffineTransformation::compose(AffineTransformation &a)
 
 
 
-   transfon.compose(grasping_pose);
+   /*transfon.compose(grasping_pose);
    out = transfon.apply(0,0,0);
    myMarker.xhand=out[1];
    myMarker.yhand=out[2];
    myMarker.zhand=out[3];
 
-  matToQuat(transfon.getMatrix(),myMarker.xqhand,myMarker.yqhand,myMarker.zqhand,myMarker.wqhand);
+  matToQuat(transfon.getMatrix(),myMarker.xqhand,myMarker.yqhand,myMarker.zqhand,myMarker.wqhand);*/
   
   }  
-
+ AffineTransformation& cameraToRobot::getTransfo()
+ {
+  return transfon;
+ }
 
 
 namespace inverse_kinematics
@@ -498,7 +533,7 @@ double setPositionGain(double Ko,double t,double alpha,double lambda)
     return 0.0;
 }
 
-static void matToQuat(Matrix cMo, double &x, double &y, double &z, double &w)
+void matToQuat(Matrix cMo, double &x, double &y, double &z, double &w)
 {
   double trace =cMo[1][1]+cMo[2][2]+cMo[3][3]+1;
   double S;

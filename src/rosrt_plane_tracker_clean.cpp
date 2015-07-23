@@ -38,6 +38,7 @@ ekeleton to create the mygotocart task
 #include "mycube.h"
 #include "rosInterface.h"
 #include "myGeometryUtils.h"
+#include "graspingPose.h"
 
 /*Xenomai includes*/
 #ifdef __XENO__
@@ -48,9 +49,11 @@ ekeleton to create the mygotocart task
 
 #define RATE 1500
 #define TOPIC "tracker/object_model"
-#define KO 4.0
-#define KP -4.0
-#define MAX_JOINTS_SPEED 0.2
+#define KO 2.0
+#define KP -3.0
+#define KPINT 0.0
+#define KOINT 0.8
+#define MAX_JOINTS_SPEED 0.4
 #define LBX -0.1
 #define UBX 0.8
 #define LBY 0.4
@@ -59,6 +62,7 @@ ekeleton to create the mygotocart task
 #define UBZ 0.5
 #define THRESHOLD_POSITION 3
 #define THRESHOLD_ORIENTATION 0.3
+#define RAU 0.1 // to control the cost function wideness in the joint limit avoidance
 
 /* defines */
 extern "C" void
@@ -67,12 +71,16 @@ add_rosrt_plane_tracker( void );
 
 /* local variables */
 static double start_time = 0.0;
+std::vector<double> errorIntegrale_x;
+std::vector<double> errorIntegrale_y;
+std::vector<double> errorIntegrale_z;
+static double errorIntegrale[3]={0};
 static rosInterface myMarker_getter = rosInterface(TOPIC); // The ros interface to retrieve data from the tracker topic
 static struct cameraToRobot frameMapping;
 
 /* Which hands are going to be controlled*/
-static int cstatus[N_ENDEFFS*6];
-
+static int cstatus[N_ENDEFFS*6+1];
+static graspingPose *myGraspingPose;
 /* local functions */
 static int  init_rosrt_plane_tracker(void);
 static bool visualizePole(struct marker);
@@ -81,12 +89,25 @@ static int  change_rosrt_plane_tracker(void);
 double setPositionGain(double Ko,double t,double alpha,double lambda);
 static int  setJoints2(Vector cart);
 
-
-
+static int nbGraspingPoses=40;
+void set_grasping_poses()
+{
+  
+  myGraspingPose = new graspingPose[nbGraspingPoses];
+  AffineTransformation a(0,0,+0.13,0,-M_PI/2,M_PI/2);
+  AffineTransformation b(0,0,0,0,0,0);
+  for (int i = 0; i < nbGraspingPoses; ++i)
+  {
+    AffineTransformation myAffineTransformation(0,-0.2*sin(i*2*M_PI/nbGraspingPoses),-0.2*cos(i*2*M_PI/nbGraspingPoses),2*i*M_PI/nbGraspingPoses,0,0);
+    a.composeTo(myAffineTransformation,b);
+    myGraspingPose[i] = graspingPose(b);
+  }
+}
 // return the desired initial angle of the right arm elbow angle (asks the user)
 static void get_config(double &elbow_angle){
   int controlElbow=1;
   double test=1.0;
+  set_grasping_poses();
  // go to the target using inverse dynamics (ID)
   get_int("\nWould you like to set the initial orientation of the left elbow ?",controlElbow,&controlElbow);
   if(controlElbow==1)
@@ -130,7 +151,7 @@ static bool init_posture_and_start(double desired_elbow_angle){
 // 1 indicate the DOF should be controlled, 0 that it should not
 // this function sets 1 for position and orientation of right hand, 0 to left hand
 static void activate_right_hand(int *update_status){
- for (int i = 0; i < 3*N_ENDEFFS; ++i)
+ for (int i = 0; i < 6*N_ENDEFFS; ++i)
  {
   if(i<6)
     update_status[i+1]=1;
@@ -147,8 +168,9 @@ static void set_to_zero(Vector &update){
 }
 
 // computes the weighten error between a target object (myMarker) and the current position of the hand (cart_orient) 
-static void right_arm_controller(struct marker &myMarker,SL_quat *cart_orient, double Ko, double Kp, Vector &update_cart){
-
+static void right_arm_controller(struct marker &myMarker,SL_quat *cart_orient, double Ko, double Kp,double Kpint,double Koint, Vector &update_cart){
+  double time_step = 1./(double)task_servo_rate;
+  static bool stuck=false;
   Eigen::Quaterniond currentQuat(cart_orient[1].q[_Q0_],cart_orient[1].q[_Q1_],cart_orient[1].q[_Q2_],cart_orient[1].q[_Q3_]);
   Eigen::Quaterniond targetQuat(myMarker.wqhand,myMarker.xqhand,myMarker.yqhand,myMarker.zqhand);
   targetQuat.normalize();
@@ -159,10 +181,61 @@ static void right_arm_controller(struct marker &myMarker,SL_quat *cart_orient, d
   update_cart[2] = Kp*(cart_state[1].x[2]-myMarker.yhand);
   update_cart[3] = Kp*(cart_state[1].x[3]-myMarker.zhand);
 
+  errorIntegrale_x.push_back((cart_state[1].x[1]-myMarker.xhand)*time_step);
+  errorIntegrale_y.push_back((cart_state[1].x[2]-myMarker.yhand)*time_step);
+  errorIntegrale_z.push_back((cart_state[1].x[3]-myMarker.zhand)*time_step);
+  if(errorIntegrale_x.size()>1000)
+  {
+    errorIntegrale_x.erase(errorIntegrale_x.begin());
+    errorIntegrale_y.erase(errorIntegrale_y.begin());
+    errorIntegrale_z.erase(errorIntegrale_z.begin());
+  }
+  int sizetemp =errorIntegrale_x.size();
+  errorIntegrale[0]=0;
+  errorIntegrale[1]=0;
+  errorIntegrale[2]=0;
+
+  for (int i = 0; i < sizetemp; ++i)
+  {
+    errorIntegrale[0]+=errorIntegrale_x[i];
+    errorIntegrale[1]+=errorIntegrale_y[i];
+    errorIntegrale[2]+=errorIntegrale_z[i];
+  }
+  double globalError=errorIntegrale[0]*errorIntegrale[0]+errorIntegrale[1]*errorIntegrale[1]+errorIntegrale[2]*errorIntegrale[2];
+  printf("globalError:%f\n", globalError);
+    if(globalError>0.15)
+    {
+      stuck=true;
+     
+    }
+    else if(stuck && globalError<0.002)
+    {
+      stuck=false;
+    }
+    if(stuck)
+    {
+      cstatus[4]=0;
+      cstatus[5]=0;
+      cstatus[6]=0;
+    }
+    else
+    {
+      cstatus[4]=1;
+      cstatus[5]=1;
+      cstatus[6]=1; 
+    }
+    if(stuck)
+    {
+  update_cart[1] += Kpint*errorIntegrale[0];
+  update_cart[2] += Kpint*errorIntegrale[1];
+  update_cart[3] += Kpint*errorIntegrale[2];
+}
+  // printf("errorIntegrale : %f\n",errorIntegrale[1]);
+
+
   update_cart[4] = Ko*eulerAngles[0];
   update_cart[5] = Ko*eulerAngles[1];
   update_cart[6] = Ko*eulerAngles[2];
-
 }
 
 static bool visualizePole(struct marker myMarker)
@@ -312,14 +385,19 @@ void safety_checking(Vector &cart,struct marker &myMarker)
 
  *****************************************************************************/
 
+
+
+
+
+
   // when this function is called, sl moves the robot to correct the error between right hand and object(cart)
   static bool
   set_to_sl(Vector &cart,struct marker &myMarker)
   {
+    static double time_step = 1./(double)task_servo_rate;
     SL_DJstate target[N_DOFS+1];
   // prepare going to the default posture
     bzero((char *)&(target[1]),N_DOFS*sizeof(target[1]));
-    double time_step = 1./(double)task_servo_rate;
     static int previous_countermrj=-1;
     int i;
     double task_time;
@@ -332,12 +410,12 @@ void safety_checking(Vector &cart,struct marker &myMarker)
     }
 
 
-    if (!inverseKinematicsClip(target,endeff,joint_opt_state,
-     cart,cstatus,time_step,MAX_JOINTS_SPEED,MAX_JOINTS_SPEED)) {
+    if (!inverseKinematicsClipWithJointAvoidance(target,endeff,joint_opt_state,
+     cart,cstatus,time_step,MAX_JOINTS_SPEED,MAX_JOINTS_SPEED,RAU)) {
       freeze();
     return FALSE;
   }
-  //clip_velocity(target,MAX_JOINTS_SPEED);
+  
 
   /* prepare inverse dynamics */
   int countermrj=0;
@@ -438,7 +516,32 @@ return TRUE;
 }
 
 
-
+void find_best_grasping_pose(struct marker &myMarker)
+{
+  double distancemin=99999999;
+  int posemin=-1;
+  double distance = 0;
+  for (int i = 0; i < nbGraspingPoses; ++i)
+  {
+       distance = myGraspingPose[i].getError();
+                if(distance<distancemin)
+                {
+                  posemin=i;
+                  distancemin=distance;
+                }
+                myGraspingPose[i].setMarker(myMarker,i);
+  }
+  if(posemin!=-1)
+    myGraspingPose[posemin].setMarkerNearestPose(myMarker);
+}
+void update_grasping_poses(struct cameraToRobot &fM,graspingPose *mGP)
+{
+   
+    for (int i = 0; i < nbGraspingPoses; ++i)
+    {
+      mGP[i].update(fM.getTransfo());
+    }
+}
 /*****************************************************************************
 ******************************************************************************
 Function Name	: run_rosrt_plane_tracker
@@ -459,11 +562,25 @@ run_rosrt_plane_tracker(void)
 {
 
   static struct marker myMarker;
-
+  static bool first_time=true;
   // getting updated marker in camera's frame
+  myMarker.nbre_poses=nbGraspingPoses;
   if (myMarker_getter.update(myMarker)){
+/*if(first_time)
+{
+    myMarker.xpose = new double[myMarker.nbre_poses];
+    myMarker.ypose = new double[myMarker.nbre_poses];
+    myMarker.zpose = new double[myMarker.nbre_poses];
+    myMarker.xqpose = new double[myMarker.nbre_poses];
+    myMarker.yqpose = new double[myMarker.nbre_poses];
+    myMarker.zqpose = new double[myMarker.nbre_poses];
+    myMarker.wqpose = new double[myMarker.nbre_poses];
+    first_time=false;
+}*/
   // transforming to robots frame
     frameMapping.update(myMarker);
+    update_grasping_poses(frameMapping, myGraspingPose);
+    find_best_grasping_pose(myMarker);
   }
 
   //displaying marker
@@ -472,13 +589,13 @@ run_rosrt_plane_tracker(void)
   // error in position and orientation weighten by gains
   Vector cart =my_vector(1,6);
   set_to_zero(cart);
+  
   if (myMarker.id!=-1){
-    right_arm_controller(myMarker,cart_orient, KO, KP, cart);
+    right_arm_controller(myMarker,cart_orient, KO, KP,KPINT,KOINT, cart);
   }
 
   // sl magic: robot motion to correct error
   return set_to_sl(cart,myMarker);
-  
 }
 
 /*****************************************************************************
